@@ -1,7 +1,7 @@
 import lightkurve as lk
 from pathlib import Path
 
-def downloadlc(target, path=None, author=None, version=None):
+def downloadlc(target, path=None, author=None, version=0):
     """Searches and downloads the MAST data archive for lightcurves. Will save as a .fits file.
     
     Parameters
@@ -53,6 +53,3 @@ def loadlc(target, path=None, download=False):
         else:
             search_query = lk.search_lightcurve(target, author='TESS-SPOC')
             return search_query[-1].download()
-        
-    
-print(loadlc('TIC 91961_lc.fits', path='Data/TESS'))
