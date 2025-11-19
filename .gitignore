@@ -1,3 +1,2 @@
 .vscode/
-Data/TESS/*
-Data/Synthetic/*
+Data/TESS*
