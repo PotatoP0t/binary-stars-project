@@ -1,5 +1,6 @@
 import lightkurve as lk
 from pathlib import Path
+from astropy.io import fits
 
 def downloadlc(target, path=None, author=None, version=0):
     """Searches and downloads the MAST data archive for lightcurves. Will save as a .fits file.
@@ -46,8 +47,18 @@ def loadlc(target, path=None, download=False):
     """
     
     filepath = Path(f'{path}/{target}')
-    if filepath.exists(): # File exists, will assume its a TESS lc
-        return lk.read(f'{filepath}')
+    if filepath.exists(): # File exists
+        try: return lk.read(f'{filepath}')
+        except lk.LightkurveError:
+            with fits.open(f'{filepath}') as file:
+                data = file[1].data 
+                time = data['TIME']
+                flux = data['FLUX']
+                flux_err = data['FLUX_ERR']
+                
+                return lk.LightCurve(time=time, flux=flux, flux_err=flux_err)
+                
+            
     else:
         if download: return downloadlc(target, path, 'TESS-SPOC')
         else:
