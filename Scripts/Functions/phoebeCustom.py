@@ -23,6 +23,13 @@ def saveSimulation(bSystem, filename, filenameFits=None, compact=True):
     # Save .fits file
     if not filenameFits: filenameFits=filename
     
-    times = bSystem['model@times'].get_value()
-    fluxes = bSystem['model@fluxes'].get_value()
-    lk(time=times, flux=fluxes).to_fits(f'{filenameFits}_lc.fits', overwrite=True)
+    models = bSystem.models
+    if len(models) != 1: # Have multiple models, save each
+        for model in models:
+            times = bSystem[f'{model}@model@times'].get_value()
+            fluxes = bSystem[f'{model}@model@fluxes'].get_value()
+            lk(time=times, flux=fluxes).to_fits(f'{filenameFits}_{model}_lc.fits', overwrite=True)
+    else: # Only one model, slightly different formatting
+        times = bSystem['model@times'].get_value()
+        fluxes = bSystem['model@fluxes'].get_value()
+        lk(time=times, flux=fluxes).to_fits(f'{filenameFits}_lc.fits', overwrite=True)
