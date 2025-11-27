@@ -1,4 +1,4 @@
-import lightkurve as lk
+import lightkurve as lk, astropy.units as u 
 from pathlib import Path
 from astropy.io import fits
 
@@ -27,13 +27,13 @@ def downloadlc(target, path=None, author=None, version=0):
     if path: path += f'/{target}_lc.fits'
     else: path = f'/{target}_lc.fits'
     search_query = lk.search_lightcurve(target, author=author)
-    if version > len(search_query) or version == None: version = 0
+    if version > len(search_query) or version == None: version = 1
     lc = search_query[version-1].download()
     lc.to_fits(path=path, overwrite=True)
     
     return lc
 
-def loadlc(target, path=None, download=False):
+def loadlc(target, path="", download=False):
     """Loads lightcurve data into a lightkurve.LightCurve object.
     
     Parameters
@@ -46,9 +46,13 @@ def loadlc(target, path=None, download=False):
         If the file isn't stored locally, after downloading then store it locally if true.
     """
     
-    filepath = Path(f'{path}/{target}')
+    filepath = Path(f'{path}{target}')
     if filepath.exists(): # File exists
-        try: return lk.read(f'{filepath}')
+        try: 
+            lc = lk.read(f'{filepath}')
+            lc.replace_column('flux', lc.flux.value*(u.electron/u.second))
+            lc.replace_column('flux_err', lc.flux_err.value*(u.electron/u.second))
+            return lc
         except lk.LightkurveError:
             with fits.open(f'{filepath}') as file:
                 data = file[1].data 
