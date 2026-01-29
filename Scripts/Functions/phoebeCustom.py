@@ -56,8 +56,9 @@ def normaliseFluxes(bSystem):
     bSystemNormalize = copy(bSystem)
     
     for model in bSystem.models:
-        flux = bSystem[f'{model}@fluxes'].get_value()
-        medium_flux = np.nanmedian(flux)
-        bSystemNormalize[f'{model}@fluxes'].set_value(value=flux/medium_flux, ignore_readonly=True)
+        for lc in bSystem[f'{model}@fluxes']:         
+            flux = bSystem[f'{model}@{lc}@fluxes'].get_value()
+            medium_flux = np.nanmedian(flux)
+            bSystemNormalize[f'{model}@{lc}@fluxes'].set_value(value=flux/medium_flux, ignore_readonly=True)
         
     return bSystemNormalize
