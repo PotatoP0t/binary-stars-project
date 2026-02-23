@@ -1,10 +1,10 @@
-import sqlite3, astropy, pandas as pd, numpy as np
+import sqlite3, pandas as pd, numpy as np
 from astroquery.mast import Catalogs
 from astroquery.gaia import Gaia
 
 def queryGaia(TIC_ID: int, DR=3):
     """Queries Gaia DR3 or DR2 for G_BP - G_RP, using TESS ID. It also calculates the error in the colour.
-    Additionally, retrieves the Gaia magnitude and Gaia effective temperature.
+    Additionally, retrieves the Gaia parallax, magnitude and effective temperature.
     
     Input
     -----
@@ -28,6 +28,7 @@ def queryGaia(TIC_ID: int, DR=3):
         query = f"""
         SELECT TOP 1
             dr3.source_id AS Gaia3_id,
+            dr3.parallax AS Gaia3_parallax,
             dr3.phot_g_mean_mag AS Gaia3_G,
             dr3.teff_gspphot AS Gaia3_T,
             dr3.bp_rp,
@@ -45,6 +46,7 @@ def queryGaia(TIC_ID: int, DR=3):
         query = f""" 
         SELECT TOP 1
             source_id AS Gaia2_id,
+            parallax AS Gaia2_parallax,
             phot_g_mean_mag AS Gaia2_G,
             teff_val AS Gaia2_T,
             bp_rp,
@@ -69,6 +71,7 @@ def queryGaia(TIC_ID: int, DR=3):
     table.remove_columns(['bp_err', 'rp_err'])
     df = table.to_pandas()
     df.insert(1, 'TIC_id', [TIC_ID], True)
+    df.insert(3, f'Gaia{DR}_dist', 1 / (1e-3 * df[f'Gaia{DR}_parallax'])) # Parllax is in mas, convert to as 
     return df
 
 def Gaia3ToJohnson(df):
@@ -125,7 +128,7 @@ def queryPrimary(df_target, method='b-v', filepath='Data/binarystargrid.db'):
     
     conn = sqlite3.connect(filepath)
     
-    if method == 'B-V':
+    if method.lower() == 'b-v':
         target_b_v = df_target['b_v'].iloc[0]
         query = """
         SELECT * FROM "F5-K4"
@@ -134,8 +137,8 @@ def queryPrimary(df_target, method='b-v', filepath='Data/binarystargrid.db'):
         
         df_grid = pd.read_sql(query, conn, params=(target_b_v, target_b_v))
         conn.close()
-        return df_grid 
-    elif method == 'BP-RP':
+        return df_grid[df_grid['Primary T'] >= df_grid['Secondary T']]
+    elif method.lower() == 'bp-rp':
         target_bp_rp = float(df_target['bp_rp'].iloc[0])
         query = """
             SELECT * FROM "F5-K4"
@@ -146,13 +149,77 @@ def queryPrimary(df_target, method='b-v', filepath='Data/binarystargrid.db'):
         
         df_grid = pd.read_sql(query, conn, params=(target_bp_rp, target_bp_rp))
         conn.close()
-        return df_grid
+        return df_grid[df_grid['Primary T'] >= df_grid['Secondary T']]
     else:
         print("No valid query target.")
         return
 
-df = queryGaia(288434781, 2)
-df = Gaia3ToJohnson(df)
-print(df)
-df_grid = queryPrimary(df, 2)
-print(df_grid)
+def querySecondary(df_grid, depth_diff: float, width_diff: float, input_format='percentage', identical_depth=0.5, primary_width=0.0):
+    """
+    Query the primary subgrid to determine the most likely binary configuration, using eclipse depths and widths.
+    
+    Input
+    -----
+    **df_grid : Pandas Dataframe**
+        Contains the primary subgrid to query to.
+        
+    **depth_diff : float**
+        Depth difference between the primary and secondary eclipse. 
+        Can be given in two different formats, given the input specified:
+            1. Percentage - Percentage difference between the primary & secondary depth from the identical case (normalised depth of 0.5).
+            2. Actual - Actual difference between the primary & secondary depth. Can supply what the depth would be for the identical case (default is 0.5, assuming normalised depth input).
+            
+    **width_diff : float**
+        Width difference between the primary and secondary eclipse.
+        Can be given in two different formats, given the input specified:
+            1. Percentage - Percentage difference between the primary & secondary width, from the primary width.
+            2. Actual - Actual difference between the primary & secondary width. **Must supply the primary width as primary_width**.
+            
+    **input_format : str**
+        The input format that the function will use. Can choose between two options:
+        1. Percentage - Uses the percentage method. Default behaviour.
+        2. Actual - Uses the actual method.
+        
+    **identical_depth : float** (used if input_format=Actual)
+        What value the depth would be if the binary system was identical. Defaults to 0.5, assuming the inputted depths are normalised.
+        
+    **primary_width : float** (used if input_format=Actual)
+        What value the primary width is. Must be supplied.
+        
+    Output
+    ------
+    **df_config : Pandas dataframe**
+        The best fit binary configuration, containing information about the components temperatures and radii.
+    """
+    
+    # Handle input
+    if input_format.lower() == 'actual':
+        depth_diff *= 100 / identical_depth 
+        width_diff *= 100 / primary_width
+    elif input_format.lower() == 'percentage': pass
+    else:
+        print("Invalid input_format.")
+        return 
+    
+    # Filter dataframe, give depths and widths equal weighting
+    df_internal = df_grid.copy()
+    df_internal['depth_t1'] = df_internal['Depth Difference'] - depth_diff
+    df_internal['width_t1'] = df_internal['Width Difference'] - width_diff
+    
+    df_internal['depth_t2'] = df_internal['depth_t1'] / df_internal['Depth Difference'].std()
+    df_internal['width_t2'] = df_internal['width_t1'] / df_internal['Width Difference'].std()
+    
+    df_internal['total_diff'] = np.sqrt(df_internal['depth_t2']**2 + df_internal['width_t2']**2)
+    df_config = df_grid.loc[df_internal['total_diff'].idxmin()]
+    
+    return df_config
+
+
+# Function testing
+# df = queryGaia(288434781, 3)
+# df = Gaia3ToJohnson(df)
+# print(df)
+# df_grid = queryPrimary(df, 'b-v')
+# print(df_grid)
+# df_config = querySecondary(df_grid, 5, 0.5)
+# print(df_config)
