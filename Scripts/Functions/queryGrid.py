@@ -61,7 +61,8 @@ def queryGaia(TIC_IDs, DR=3):
             dr3.teff_gspphot AS Gaia3_T,
             dr3.bp_rp,
             dr3.phot_bp_mean_flux_over_error AS bp_err,
-            dr3.phot_rp_mean_flux_over_error AS rp_err
+            dr3.phot_rp_mean_flux_over_error AS rp_err,
+            dr3.ebpminrp_gspphot AS ext
         FROM gaiadr3.gaia_source AS dr3
         INNER JOIN gaiaedr3.dr2_neighbourhood AS bridge 
             ON dr3.source_id = bridge.dr3_source_id
