@@ -134,6 +134,11 @@ def Gaia3ToJohnson(df):
     bv = []
     for i, bprp_i in enumerate(df['bp_rp']):
         bv_coeff = [0.01916, -0.176, 0.5707, -0.7815, 1.575, -0.06483 - bprp_i] # Coefficients for B-V, from Gaia DR3 docs
+        
+        if np.isnan(bprp_i): 
+            bv.append(np.nan)
+            continue
+        
         roots = np.roots(bv_coeff)
                 
         real_roots = roots[np.isclose(roots.imag, 0)].real # Pull real roots
