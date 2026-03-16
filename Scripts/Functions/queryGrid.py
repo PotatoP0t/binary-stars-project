@@ -122,7 +122,7 @@ def Gaia3ToJohnson(df):
     Input
     -----
     df : Pandas Dataframe
-        Must contain bp_rp column
+        Must contain bp_rp column and bp_rp_err column.
         
     Output
     ------
@@ -130,26 +130,46 @@ def Gaia3ToJohnson(df):
         Dataframe with B - V appended
     """
         
-    # Calculate B - V 
-    bv = []
+    bv = [] # B - V values
+    bv_err = [] # Error values
+    
+    coeff = [0.01916, -0.176, 0.5707, -0.7815, 1.575, -0.06483] # Coefficients for B-V conversion, from Gaia DR3 docs
+    deriv_coeff = [5 * coeff[0], 4 * coeff[1], 3 * coeff[2], 2 * coeff[3], coeff[4]] # Derivative coefficients, for error propagation
+    sys_err = 0.0659 # Systematic error of conversion, from Gaia DR3 docs
+    
     for i, bprp_i in enumerate(df['bp_rp']):
-        bv_coeff = [0.01916, -0.176, 0.5707, -0.7815, 1.575, -0.06483 - bprp_i] # Coefficients for B-V, from Gaia DR3 docs
-        
+        # If no colour, skip
         if np.isnan(bprp_i): 
             bv.append(np.nan)
+            bv_err.append(np.nan)
             continue
         
-        roots = np.roots(bv_coeff)
+        poly_coeffs = list(coeff[:-1] + [coeff[-1] - bprp_i])
+        roots = np.roots(poly_coeffs)
                 
         real_roots = roots[np.isclose(roots.imag, 0)].real # Pull real roots
+        
+        # Solution exists
         if len(real_roots) > 0:
+            # Get closest b_v value 
             index = np.abs(real_roots - df['bp_rp'][i]).argmin() # Multple roots, b-v is closest to bp-rp
-            bv.append(real_roots[index]) 
+            res_bv = real_roots[index]
+            bv.append(res_bv)
+            
+            # Error propagation from derivative method
+            slope = np.polyval(deriv_coeff, res_bv)
+            sigma_colour = df['bp_rp_err'].iloc[i]
+            
+            propagated_err = np.sqrt(sys_err**2 + (sigma_colour / np.abs(slope))**2)
+            bv_err.append(propagated_err)
+        
+        # Solution does not exist  
         else:
             bv.append(np.nan)
+            bv_err.append(np.nan)
         
     df['b_v'] = bv
-    df['b_v_err'] = 0.0659 # Error from conversion >> error in Gaia BP-RP color, so will disregard color error propagation for convinience
+    df['b_v_err'] = bv_err
     return df
 
 def queryPrimary(df_target, method='b-v', filepath='Data/binarystargrid.db'):
@@ -194,7 +214,7 @@ def queryPrimary(df_target, method='b-v', filepath='Data/binarystargrid.db'):
     conn.close()
     return results_dict
 
-def querySecondary(df_grid, depth_diff: float, width_diff: float, depth_format='percentage', width_format='percentage', identical_depth=0.5, primary_width=0.0):
+def querySecondary(df_grid, depth_diff: float, width_diff: float, width_format='percentage', primary_width=0.0):
     """
     Query the primary subgrid to determine the most likely binary configuration, using eclipse depths and widths.
     
@@ -239,9 +259,8 @@ def querySecondary(df_grid, depth_diff: float, width_diff: float, depth_format='
     
     # Handle input
     options = {'percentage', 'absolute'}
-    if depth_format.lower() not in options or width_format.lower() not in options: raise ValueError('Incorrect depth or width format.')
-    if depth_format.lower() == 'absolute': depth_diff *= 100 / identical_depth
-    if width_format.lower() == 'absolute': width_diff *= 100 / primary_width
+    if width_format.lower() not in options: raise ValueError('Incorrect width format.')
+    if width_format.lower() == 'absolute': width_diff /= primary_width
     
     # Filter dataframe, give depths and widths equal weighting
     df_internal = df_grid.copy()
